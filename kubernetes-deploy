@@ -1,0 +1,51 @@
+# AWS and Terraform Credentials for Kubernetes
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+export AWS_DEFAULT_REGION=eu-west-1
+export TF_VAR_aws_region=$AWS_DEFAULT_REGION
+
+# Clone the microservice demo repo
+git clone https://github.com/microservices-demo/microservices-demo
+cd microservices-demo
+
+# Set up AWS Keypair
+aws ec2 create-key-pair --key-name deploy-docs-k8s --query 'KeyMaterial' --output text > ~/.ssh/deploy-docs-k8s.pem
+chmod 600 ~/.ssh/deploy-docs-k8s.pem
+
+# Run Terraform
+# Add Terraform AWS Plugin
+cd deploy/kubernetes/terraform
+terraform init
+terraform apply
+
+# Copy the files of the repo to the master node
+master_ip=$(terraform output -json | jq -r '.master_address.value')
+scp -i ~/.ssh/deploy-docs-k8s.pem -o StrictHostKeyChecking=no -rp ../manifests ubuntu@$master_ip:/tmp/
+
+# Set up WeaveNet on the master node
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip sudo kubeadm init > k8s-init.log
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip "sudo cp /etc/kubernetes/admin.conf /home/ubuntu/"
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip "sudo chown \$(id -u):\$(id -g) \$HOME/admin.conf"
+grep -e --token k8s-init.log > join.cmd
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip KUBECONFIG=\$HOME/admin.conf kubectl apply -f https://git.io/weave-kube-1.6
+
+# Make the nodes join the master
+node_addresses=$(terraform output -json | jq -r '.node_addresses.value|@sh' | sed -e "s/'//g" )
+cd ../../../
+for node in $node_addresses; do
+    ssh -i ~/.ssh/deploy-docs-k8s.pem -o StrictHostKeyChecking=no ubuntu@$node sudo 'cat join.cmd'
+done
+
+# Set up Weave scope
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip KUBECONFIG=\$HOME/admin.conf kubectl apply -f 'https://cloud.weave.works/launch/k8s/weavescope.yaml'
+
+# Deploy Sock Shop
+ssh -i ~/.ssh/deploy-docs-k8s.pem ubuntu@$master_ip KUBECONFIG=\$HOME/admin.conf kubectl apply -f /tmp/manifests/sock-shop-ns.yaml -f /tmp/manifests
+
+# Get the output from Terraform
+cd deploy/kubernetes/terraform
+terraform output
+
+# Testing
+elb_url=$(terraform output -json | jq -r '.sock_shop_address.value')
+docker run --rm weaveworksdemos/load-test -d 300 -h $elb_url -c 2 -r 100

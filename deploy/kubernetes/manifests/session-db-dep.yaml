@@ -1,0 +1,44 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: session-db
+  labels:
+    name: session-db
+    kube-monkey/enabled: enabled
+    kube-monkey/identifier: session-db
+    kube-monkey/mtbf: '2'
+    kube-monkey/kill-mode: "fixed"
+    kube-monkey/kill-value: 1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: session-db
+        kube-monkey/enabled: enabled
+        kube-monkey/identifier: session-db
+        kube-monkey/mtbf: '2'
+        kube-monkey/kill-mode: "fixed"
+        kube-monkey/kill-value: 1
+      annotations:
+        prometheus.io.scrape: "false"
+    spec:
+      containers:
+      - name: session-db
+        image: redis:alpine
+        ports:
+        - name: redis
+          containerPort: 6379
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        beta.kubernetes.io/os: linux

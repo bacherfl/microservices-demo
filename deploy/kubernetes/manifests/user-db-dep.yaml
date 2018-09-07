@@ -1,0 +1,50 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: user-db
+  labels:
+    name: user-db
+    kube-monkey/enabled: enabled
+    kube-monkey/identifier: user-db
+    kube-monkey/mtbf: '2'
+    kube-monkey/kill-mode: "fixed"
+    kube-monkey/kill-value: 1
+  namespace: sock-shop
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: user-db
+        kube-monkey/enabled: enabled
+        kube-monkey/identifier: user-db
+        kube-monkey/mtbf: '2'
+        kube-monkey/kill-mode: "fixed"
+        kube-monkey/kill-value: 1
+    spec:
+      containers:
+      - name: user-db
+        image: weaveworksdemos/user-db:0.3.0
+
+        ports:
+        - name: mongo
+          containerPort: 27017
+        securityContext:
+          capabilities:
+            drop:
+              - all
+            add:
+              - CHOWN
+              - SETGID
+              - SETUID
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+        - name: tmp-volume
+          emptyDir:
+            medium: Memory
+      nodeSelector:
+        beta.kubernetes.io/os: linux
